@@ -2,6 +2,9 @@ import streamlit as st
 import pandas as pd
 from zhipuai import ZhipuAI
 import random
+import json
+import os
+from datetime import datetime
 
 
 # ==============================================================================
@@ -26,6 +29,40 @@ def inject_custom_css():
                 white-space: normal; word-wrap: break-word; line-height: 1.4;
             }
             .stButton>button:hover { border-color: #007BFF; color: #007BFF; box-shadow: 0 2px 5px rgba(0,0,0,0.1); }
+
+            /* 评价按钮样式 */
+            .rating-container {
+                display: flex;
+                gap: 8px;
+                margin: 10px 0;
+                justify-content: flex-start;
+                align-items: center;
+            }
+            .rating-button {
+                background: none;
+                border: 1px solid #ddd;
+                border-radius: 20px;
+                padding: 4px 12px;
+                cursor: pointer;
+                font-size: 12px;
+                transition: all 0.2s;
+                min-height: 30px !important;
+                height: 30px !important;
+            }
+            .rating-button:hover {
+                background-color: #f0f0f0;
+                border-color: #007BFF;
+            }
+            .rating-button.selected {
+                background-color: #007BFF;
+                color: white;
+                border-color: #007BFF;
+            }
+            .rating-label {
+                font-size: 12px;
+                color: #666;
+                margin-right: 8px;
+            }
         </style>
     """, unsafe_allow_html=True)
 
@@ -92,6 +129,102 @@ def get_ai_response_stream(question, context, persona, client, personas_config):
 
 
 # ==============================================================================
+# --- SECTION 1.5: FEEDBACK SYSTEM ---
+# ==============================================================================
+
+def save_feedback(question, answer, persona, rating, feedback_text=""):
+    """保存用户反馈到JSON文件"""
+    feedback_data = {
+        "timestamp": datetime.now().isoformat(),
+        "question": question,
+        "answer": answer,
+        "persona": persona,
+        "rating": rating,
+        "feedback_text": feedback_text
+    }
+
+    feedback_file = "feedback.json"
+
+    # 读取现有反馈数据
+    if os.path.exists(feedback_file):
+        try:
+            with open(feedback_file, 'r', encoding='utf-8') as f:
+                feedbacks = json.load(f)
+        except:
+            feedbacks = []
+    else:
+        feedbacks = []
+
+    # 添加新反馈
+    feedbacks.append(feedback_data)
+
+    # 保存到文件
+    try:
+        with open(feedback_file, 'w', encoding='utf-8') as f:
+            json.dump(feedbacks, f, ensure_ascii=False, indent=2)
+        return True
+    except Exception as e:
+        st.error(f"保存反馈失败: {str(e)}")
+        return False
+
+
+def rate_response(message_index, rating):
+    """处理用户评价"""
+    if message_index < len(st.session_state.messages):
+        # 找到对应的问答对
+        if message_index > 0:
+            question_msg = st.session_state.messages[message_index - 1]
+            answer_msg = st.session_state.messages[message_index]
+
+            if question_msg["role"] == "user" and answer_msg["role"] == "assistant":
+                # 保存反馈 - 这是关键调用
+                success = save_feedback(
+                    question=question_msg["content"],
+                    answer=answer_msg["content"],
+                    persona=answer_msg["persona"],
+                    rating=rating
+                )
+
+                if success:
+                    # 更新消息的评价状态
+                    st.session_state.messages[message_index]["rating"] = rating
+                    st.success(f"感谢您的{'好评' if rating == 'good' else '反馈'}！我们会继续改进服务。")
+                    st.rerun()
+
+
+def display_rating_buttons(message_index):
+    """显示评价按钮"""
+    message = st.session_state.messages[message_index]
+
+    # 检查是否已经评价过
+    current_rating = message.get("rating", None)
+
+    col1, col2, col3 = st.columns([1, 1, 6])
+
+    with col1:
+        good_style = "selected" if current_rating == "good" else ""
+        if st.button("👍 有用", key=f"good_{message_index}",
+                     help="这个回答对我很有帮助",
+                     disabled=current_rating is not None):
+            rate_response(message_index, "good")
+
+    with col2:
+        bad_style = "selected" if current_rating == "bad" else ""
+        if st.button("👎 改进", key=f"bad_{message_index}",
+                     help="这个回答需要改进",
+                     disabled=current_rating is not None):
+            rate_response(message_index, "bad")
+
+    # 显示评价状态
+    if current_rating:
+        with col3:
+            if current_rating == "good":
+                st.markdown("✅ 已标记为有用")
+            else:
+                st.markdown("📝 已反馈需要改进")
+
+
+# ==============================================================================
 # --- SECTION 2: STATE MANAGEMENT & UI CALLBACKS ---
 # ==============================================================================
 
@@ -116,11 +249,11 @@ inject_custom_css()
 
 PERSONAS = {
     "运小安": {"icon": "📜", "desc": "风趣幽默的历史系学长",
-               "prompt": "作为“运小安”，一位风趣幽默的历史系学长，请基于以下知识：【{context}】，生动有趣地回答问题：【{question}】"},
+               "prompt": "作为'运小安'，一位风趣幽默的历史系学长，请基于以下知识：【{context}】，生动有趣地回答问题：【{question}】"},
     "淮博士": {"icon": "🤖", "desc": "高效精准的知识官",
-               "prompt": "作为“淮博士”，一位高效精准的知识官，请基于以下知识：【{context}】，结构化、清晰地回答问题：【{question}】"},
+               "prompt": "作为'淮博士'，一位高效精准的知识官，请基于以下知识：【{context}】，结构化、清晰地回答问题：【{question}】"},
     "阿淮": {"icon": "🍻", "desc": "热情接地气的本地咖",
-             "prompt": "作为“阿淮”，一位接地气的淮安本地朋友，请基于以下知识：【{context}】，用充满生活气息的口吻回答问题：【{question}】"}
+             "prompt": "作为'阿淮'，一位接地气的淮安本地朋友，请基于以下知识：【{context}】，用充满生活气息的口吻回答问题：【{question}】"}
 }
 
 client = initialize_client()
@@ -153,10 +286,14 @@ st.caption("我是您的专属淮安导游，选择一个主题，开启一场�
 st.write("---")
 
 # --- Display Chat History from session_state ---
-for msg in st.session_state.messages:
+for i, msg in enumerate(st.session_state.messages):
     icon = PERSONAS[msg["persona"]]["icon"] if msg["role"] == "assistant" else "👤"
     with st.chat_message(msg["role"], avatar=icon):
         st.markdown(msg["content"])
+
+        # 为AI回答添加评价按钮
+        if msg["role"] == "assistant":
+            display_rating_buttons(i)
 
 # --- "LIVE" Q&A Handling ---
 # Check if a new question has been submitted via a button click or chat input
@@ -220,6 +357,8 @@ else:
         st.rerun()
 
 # --- Chat Input for direct questions ---
-if question_from_input := st.chat_input("您也可以直接向我提问..."):
+# 修复语法错误
+question_from_input = st.chat_input("您也可以直接向我提问...")
+if question_from_input:
     ask_question(question_from_input)
     st.rerun()
