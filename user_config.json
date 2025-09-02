@@ -1,0 +1,24 @@
+{
+  "users": {
+    "admin": {
+      "password": "a665a45920422f9d417e4867efdc4fb8a04a1f3fff1fa07e998e86f7f7a27ae3",
+      "role": "admin",
+      "name": "管理员"
+    },
+    "user": {
+      "password": "73b20715a569b6673a094742c1978fc6e97a15c92b0b8b74087116c69d2d8e61",
+      "role": "user",
+      "name": "普通用户"
+    },
+    "demo": {
+      "password": "fac01d288cdf92d533646a2932f6492bdf6b7e52ffa7bb5a610d7a7d1908686a",
+      "role": "user",
+      "name": "演示用户"
+    },
+    "user111": {
+      "password": "6c4f39af50f1e3d939f63514a6edd5507aba0be7aea7659e8ada5756cb2cad27",
+      "role": "user",
+      "name": "三年"
+    }
+  }
+}
